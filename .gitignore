@@ -1,4 +1,5 @@
 config.py
+.env
 .venv/
 __pycache__/
 mesures.csv
