@@ -1,0 +1,9 @@
+# Charge automatiquement les tableaux de bord du dossier grafana/dashboards
+apiVersion: 1
+
+providers:
+  - name: balise
+    type: file
+    allowUiUpdates: true
+    options:
+      path: /etc/grafana/dashboards

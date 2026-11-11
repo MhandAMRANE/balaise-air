@@ -23,10 +23,15 @@ services:
 
   grafana:                            # 📊 le dashboard pro
     image: grafana/grafana-oss:11.2.0
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}   # lu par la source de données Grafana
     ports:
       - "3000:3000"
     volumes:
       - grafana-data:/var/lib/grafana
+      - ./grafana/provisioning/datasources:/etc/grafana/provisioning/datasources
+      - ./grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards
+      - ./grafana/dashboards:/etc/grafana/dashboards
     depends_on:
       - postgres
     restart: unless-stopped

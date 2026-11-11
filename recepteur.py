@@ -1,11 +1,21 @@
 import json
-import csv
 import os
 from datetime import datetime
 import paho.mqtt.client as mqtt
+import psycopg
+from dotenv import load_dotenv
 
-FICHIER = "mesures.csv"
-COLONNES = ["date_heure", "temperature", "humidite", "air", "etat", "cause"]
+# --- Connexion à PostgreSQL ---
+load_dotenv()        
+base = psycopg.connect(
+    host="localhost",
+    port=5432,
+    dbname="balise",
+    user="balise",
+    password=os.environ["POSTGRES_PASSWORD"],
+    autocommit=True,        # chaque INSERT est enregistré tout de suite
+)
+print("Connecté à PostgreSQL")
 
 
 def on_connect(client, userdata, flags, reason_code, properties):
@@ -21,17 +31,17 @@ def on_message(client, userdata, msg):
         print("Message ignoré (pas du JSON) :", msg.payload)
         return
 
-    # 2. Ajouter la date et l'heure du PC
-    mesure["date_heure"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    # 2. Prendre la date et l'heure du PC
+    maintenant = datetime.now()
 
-    # 3. Ajouter une ligne dans le fichier CSV
-    nouveau = not os.path.exists(FICHIER)
-    with open(FICHIER, "a", newline="", encoding="utf-8") as f:
-        ecrivain = csv.DictWriter(f, fieldnames=COLONNES)
-        if nouveau:
-            ecrivain.writeheader()
-        ecrivain.writerow(mesure)
-    print("Enregistré :", mesure)
+    # 3. Ajouter une ligne dans la table PostgreSQL
+    base.execute(
+        "INSERT INTO mesures (date_heure, temperature, humidite, air, etat, cause) "
+        "VALUES (%s, %s, %s, %s, %s, %s)",
+        (maintenant, mesure.get("temperature"), mesure.get("humidite"),
+         mesure.get("air"), mesure.get("etat"), mesure.get("cause")),
+    )
+    print("Enregistré dans PostgreSQL :", mesure)
 
 
 client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
