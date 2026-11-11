@@ -125,7 +125,10 @@ Elles sont enregistrées en **heure locale de Paris** dans la colonne `date_heur
    ```
    POSTGRES_PASSWORD=un_mot_de_passe
    PGADMIN_PASSWORD=un_autre_mot_de_passe
+   DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...
    ```
+   Pour l'URL Discord : dans le salon, *Modifier le salon → Intégrations → Webhooks → Nouveau webhook
+   → Copier l'URL du webhook*. Elle se garde comme un mot de passe.
 4. Autoriser le port MQTT dans le pare-feu (PowerShell **administrateur**) :
    ```powershell
    New-NetFirewallRule -DisplayName "Mosquitto MQTT" -Direction Inbound -Protocol TCP -LocalPort 1883 -Action Allow
@@ -194,7 +197,9 @@ Get-NetIPAddress -AddressFamily IPv4 -InterfaceAlias "Wi-Fi" | Select-Object IPA
 
 Attendre **2 à 3 minutes** que le capteur d'air chauffe avant de faire une démonstration.
 
-**Pour arrêter** : Stop dans Thonny, `Ctrl + C` dans le terminal du récepteur, puis `docker compose stop`.
+### Arrêter le projet
+
+**Stop** dans Thonny, `Ctrl + C` dans le terminal du récepteur, puis `docker compose stop`.
 L'historique reste dans PostgreSQL ; les nouvelles mesures s'ajoutent à la suite.
 ⚠️ Ne pas utiliser `docker compose down -v` : le `-v` **efface la base de données**.
 
@@ -213,6 +218,15 @@ avant de lancer un autre programme.
   Il se rafraîchit toutes les 5 s.
 - La source de données PostgreSQL et le tableau de bord sont créés automatiquement à partir du dossier `grafana/`.
   Dans Grafana, l'hôte de la base est `postgres:5432` (le nom du service Docker), pas `localhost`.
+
+### Alerte Discord
+
+- Grafana vérifie toutes les 20 secondes la dernière mesure ; si elle est **Poor**, un message est envoyé sur Discord
+  (« ⚠️ Qualité de l'air : mauvaise », avec la cause et « Pensez à aérer la pièce. »).
+- Un seul message par épisode : pas de message quand l'air redevient bon, et un rappel seulement
+  si l'état reste Poor pendant 24 h.
+- Tout est défini dans `grafana/provisioning/alerting/discord.yml` ; l'URL du webhook vient de `.env`.
+- Pour tester : approcher du parfum ou de l'alcool du capteur d'air (valeur > 1000 → Poor).
 
 ### pgAdmin — la base de données (http://localhost:5050)
 
@@ -249,6 +263,9 @@ avant de lancer un autre programme.
 - **Version 2** : tout tourne dans **Docker** (Mosquitto, PostgreSQL, Grafana, pgAdmin).
   `recepteur.py` enregistre dans **PostgreSQL**, et **Grafana** remplace Streamlit.
   Les mots de passe sont sortis du code (`config.py` et `.env`, ignorés par Git).
+  **Alerte Discord** envoyée par Grafana quand l'état passe à Poor.
+  Sécurité : PostgreSQL, Grafana et pgAdmin ne sont accessibles que depuis le PC (`127.0.0.1`) ;
+  seul Mosquitto (1883) est ouvert au réseau, pour la carte.
 
 Les mesures de la version 1 (fichiers CSV) sont gardées en local pour le rapport, mais ne sont pas sur GitHub.
 
@@ -256,7 +273,7 @@ Les mesures de la version 1 (fichiers CSV) sont gardées en local pour le rappor
 
 ## 10. Pour la suite
 
-- **Niveau normal** : alertes (notification quand l'état passe à Poor, possibles avec Grafana), batterie + BMS
+- **Niveau normal** : batterie + BMS
   (ne jamais brancher une batterie Li-ion/LiPo directement sur la carte sans circuit adapté).
 - **Niveau avancé** : prédiction de la qualité de l'air à partir de l'historique de la table `mesures`,
   module RTC, ventilation automatique.
