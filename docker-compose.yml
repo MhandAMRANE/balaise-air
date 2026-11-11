@@ -31,6 +31,20 @@ services:
       - postgres
     restart: unless-stopped
 
+  pgadmin:                            # 🔍 l'interface pour voir la base
+    image: dpage/pgadmin4:8
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@example.com
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD}
+    ports:
+      - "5050:80"
+    volumes:
+      - pgadmin-data:/var/lib/pgadmin
+    depends_on:
+      - postgres
+    restart: unless-stopped
+
 volumes:
   pgdata:
   grafana-data:
+  pgadmin-data:
