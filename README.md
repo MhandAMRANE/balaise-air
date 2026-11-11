@@ -126,7 +126,13 @@ Elles sont enregistrées en **heure locale de Paris** dans la colonne `date_heur
    POSTGRES_PASSWORD=un_mot_de_passe
    PGADMIN_PASSWORD=un_autre_mot_de_passe
    DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...
+   SMTP_USER=adresse.expediteur@gmail.com
+   SMTP_PASSWORD=motdepassedapplication
+   ALERT_EMAIL_TO=adresse.destinataire@gmail.com
    ```
+   Pour `SMTP_PASSWORD` : activer la validation en deux étapes du compte Google, puis créer un
+   **mot de passe d'application** sur https://myaccount.google.com/apppasswords (16 lettres, sans espaces).
+   Ce n'est pas le mot de passe Gmail normal ; il se garde comme un mot de passe.
    Pour l'URL Discord : dans le salon, *Modifier le salon → Intégrations → Webhooks → Nouveau webhook
    → Copier l'URL du webhook*. Elle se garde comme un mot de passe.
 4. Autoriser le port MQTT dans le pare-feu (PowerShell **administrateur**) :
@@ -222,10 +228,12 @@ avant de lancer un autre programme.
 ### Alerte Discord
 
 - Grafana vérifie toutes les 20 secondes la dernière mesure ; si elle est **Poor**, un message est envoyé sur Discord
-  (« ⚠️ Qualité de l'air : mauvaise », avec la cause et « Pensez à aérer la pièce. »).
+  **et par e-mail** (« ⚠️ Qualité de l'air : mauvaise », avec la cause et « Pensez à aérer la pièce. »).
+- L'e-mail part du compte Gmail `SMTP_USER` vers `ALERT_EMAIL_TO` (réglages dans `.env`).
 - Un seul message par épisode : pas de message quand l'air redevient bon, et un rappel seulement
   si l'état reste Poor pendant 24 h.
-- Tout est défini dans `grafana/provisioning/alerting/discord.yml` ; l'URL du webhook vient de `.env`.
+- Tout est défini dans `grafana/provisioning/alerting/discord.yml` (le texte du message y est écrit une seule fois,
+  pour Discord et l'e-mail) ; l'URL du webhook et les identifiants Gmail viennent de `.env`.
 - Pour tester : approcher du parfum ou de l'alcool du capteur d'air (valeur > 1000 → Poor).
 
 ### pgAdmin — la base de données (http://localhost:5050)
@@ -263,7 +271,7 @@ avant de lancer un autre programme.
 - **Version 2** : tout tourne dans **Docker** (Mosquitto, PostgreSQL, Grafana, pgAdmin).
   `recepteur.py` enregistre dans **PostgreSQL**, et **Grafana** remplace Streamlit.
   Les mots de passe sont sortis du code (`config.py` et `.env`, ignorés par Git).
-  **Alerte Discord** envoyée par Grafana quand l'état passe à Poor.
+  **Alerte Discord et e-mail** envoyée par Grafana quand l'état passe à Poor.
   Sécurité : PostgreSQL, Grafana et pgAdmin ne sont accessibles que depuis le PC (`127.0.0.1`) ;
   seul Mosquitto (1883) est ouvert au réseau, pour la carte.
 

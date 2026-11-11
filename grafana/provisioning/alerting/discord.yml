@@ -1,8 +1,27 @@
-# Alerte Discord : un message quand la qualité de l'air devient Poor.
-# L'URL du webhook vient de .env (DISCORD_WEBHOOK_URL), jamais du code.
+# Alerte Discord + e-mail : un message quand la qualité de l'air devient Poor.
+# L'URL du webhook et les adresses e-mail viennent de .env, jamais du code.
 apiVersion: 1
 
-# 1. Où envoyer : le salon Discord
+# 0. Le texte du message, écrit une seule fois et utilisé par Discord et par l'e-mail.
+#    Une ligne par cause envoyée par la balise (air, temperature, humidite).
+templates:
+  - orgId: 1
+    name: balise
+    template: |-
+      {{ define "balise.message" -}}
+      Attention, la qualité de l'air dans la pièce est mauvaise.
+      {{ range .Alerts.Firing -}}
+      {{ if match "air" .Labels.cause }}• L'air est pollué (fumée, parfum, produits ménagers…)
+      {{ end -}}
+      {{ if match "temperature" .Labels.cause }}• La température n'est pas confortable
+      {{ end -}}
+      {{ if match "humidite" .Labels.cause }}• L'humidité n'est pas bonne
+      {{ end -}}
+      {{ end -}}
+      Pensez à aérer la pièce.
+      {{- end }}
+
+# 1. Où envoyer : le salon Discord et la boîte mail
 contactPoints:
   - orgId: 1
     name: Discord balise
@@ -14,20 +33,17 @@ contactPoints:
           url: ${DISCORD_WEBHOOK_URL}
           use_discord_username: false
           title: "⚠️ Qualité de l'air : mauvaise"
-          # Une ligne par cause envoyée par la balise (air, temperature, humidite)
-          message: |-
-            Attention, la qualité de l'air dans la pièce est mauvaise.
-            {{ range .Alerts.Firing -}}
-            {{ if match "air" .Labels.cause }}• L'air est pollué (fumée, parfum, produits ménagers…)
-            {{ end -}}
-            {{ if match "temperature" .Labels.cause }}• La température n'est pas confortable
-            {{ end -}}
-            {{ if match "humidite" .Labels.cause }}• L'humidité n'est pas bonne
-            {{ end -}}
-            {{ end -}}
-            Pensez à aérer la pièce.
+          message: '{{ template "balise.message" . }}'
+      - uid: email-balise
+        type: email
+        disableResolveMessage: true   # pas d'e-mail de retour à la normale
+        settings:
+          addresses: ${ALERT_EMAIL_TO}
+          singleEmail: true
+          subject: "⚠️ Qualité de l'air : mauvaise"
+          message: '{{ template "balise.message" . }}'
 
-# 2. Toutes les alertes vont sur Discord ; rappel au bout de 24 h si l'état reste Poor
+# 2. Toutes les alertes vont sur Discord et par e-mail ; rappel au bout de 24 h si l'état reste Poor
 policies:
   - orgId: 1
     receiver: Discord balise
