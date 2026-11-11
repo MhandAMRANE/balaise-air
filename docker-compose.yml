@@ -15,7 +15,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: balise
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"         # accessible seulement depuis le PC
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql
@@ -25,12 +25,14 @@ services:
     image: grafana/grafana-oss:11.2.0
     environment:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}   # lu par la source de données Grafana
+      DISCORD_WEBHOOK_URL: ${DISCORD_WEBHOOK_URL}   # lu par l'alerte Discord
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"         # accessible seulement depuis le PC
     volumes:
       - grafana-data:/var/lib/grafana
       - ./grafana/provisioning/datasources:/etc/grafana/provisioning/datasources
       - ./grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards
+      - ./grafana/provisioning/alerting:/etc/grafana/provisioning/alerting
       - ./grafana/dashboards:/etc/grafana/dashboards
     depends_on:
       - postgres
@@ -42,7 +44,7 @@ services:
       PGADMIN_DEFAULT_EMAIL: admin@example.com
       PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD}
     ports:
-      - "5050:80"
+      - "127.0.0.1:5050:80"           # accessible seulement depuis le PC
     volumes:
       - pgadmin-data:/var/lib/pgadmin
     depends_on:

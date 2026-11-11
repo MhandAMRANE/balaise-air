@@ -1,0 +1,81 @@
+# Alerte Discord : un message quand la qualité de l'air devient Poor.
+# L'URL du webhook vient de .env (DISCORD_WEBHOOK_URL), jamais du code.
+apiVersion: 1
+
+# 1. Où envoyer : le salon Discord
+contactPoints:
+  - orgId: 1
+    name: Discord balise
+    receivers:
+      - uid: discord-balise
+        type: discord
+        disableResolveMessage: true   # pas de message de retour à la normale
+        settings:
+          url: ${DISCORD_WEBHOOK_URL}
+          use_discord_username: false
+          title: "⚠️ Qualité de l'air : mauvaise"
+          # Une ligne par cause envoyée par la balise (air, temperature, humidite)
+          message: |-
+            Attention, la qualité de l'air dans la pièce est mauvaise.
+            {{ range .Alerts.Firing -}}
+            {{ if match "air" .Labels.cause }}• L'air est pollué (fumée, parfum, produits ménagers…)
+            {{ end -}}
+            {{ if match "temperature" .Labels.cause }}• La température n'est pas confortable
+            {{ end -}}
+            {{ if match "humidite" .Labels.cause }}• L'humidité n'est pas bonne
+            {{ end -}}
+            {{ end -}}
+            Pensez à aérer la pièce.
+
+# 2. Toutes les alertes vont sur Discord ; rappel au bout de 24 h si l'état reste Poor
+policies:
+  - orgId: 1
+    receiver: Discord balise
+    group_by: ['alertname']
+    group_wait: 10s
+    group_interval: 1m
+    repeat_interval: 24h
+
+# 3. La règle : la dernière mesure (moins de 2 minutes) est-elle Poor ?
+groups:
+  - orgId: 1
+    name: balise
+    folder: Balise
+    interval: 20s
+    rules:
+      - uid: balise-etat-poor
+        title: Qualité de l'air mauvaise
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: balise-pg
+            model:
+              refId: A
+              editorMode: code
+              format: table
+              rawQuery: true
+              rawSql: >-
+                SELECT CASE WHEN etat = 'Poor' THEN 1 ELSE 0 END AS poor, cause
+                FROM mesures
+                WHERE date_heure AT TIME ZONE 'Europe/Paris' > now() - interval '2 minutes'
+                ORDER BY id DESC LIMIT 1
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [0.5]
+        noDataState: OK          # pas de mesure récente : pas d'alerte
+        execErrState: KeepLast   # base injoignable : on garde l'état précédent
+        for: 0s
+        annotations:
+          summary: "Qualité de l'air mauvaise (cause : {{ index .Labels \"cause\" }})"
+        labels: {}
+        isPaused: false
