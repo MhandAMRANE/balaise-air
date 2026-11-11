@@ -4,14 +4,14 @@ Projet IoT — Master Data Engineering.
 
 La balise mesure la **température**, l'**humidité** et un **indicateur de qualité de l'air**.
 Elle affiche l'état de la pièce sur sa LED (🟢 Good / 🟡 Moderate / 🔴 Poor) et envoie ses
-mesures en **MQTT** vers un PC, qui les **enregistre** et les affiche sur un **dashboard**.
+mesures en **MQTT** vers un PC, qui les **enregistre dans PostgreSQL** et les affiche dans **Grafana**.
 
 ```
-Capteurs → ESP32-C6 → Wi-Fi / MQTT → Mosquitto (PC) → recepteur.py → mesures.csv → dashboard.py
+Capteurs → ESP32-C6 → Wi-Fi / MQTT → Mosquitto (Docker) → recepteur.py → PostgreSQL (Docker) → Grafana (Docker)
 ```
 
 **Niveau minimum atteint** : capteurs + ESP32 + LED + Wi-Fi + MQTT + dashboard.
-**Déjà fait du niveau normal** : stockage des données et historique (`mesures.csv` + courbes).
+**Niveau normal** : stockage des données dans une base PostgreSQL et historique (courbes Grafana).
 
 ---
 
@@ -21,19 +21,20 @@ Capteurs → ESP32-C6 → Wi-Fi / MQTT → Mosquitto (PC) → recepteur.py → m
 
 | Fichier | Rôle |
 |---|---|
-| `etape1.py` | Apprentissage : mesures + LED, sans réseau |
-| `etape2.py` | Apprentissage : test de connexion Wi-Fi |
-| `etape3.py` | Apprentissage : envoi de 5 messages MQTT de test |
 | **`balise.py`** | **Programme final** : mesure, décide l'état, allume la LED, envoie au PC |
+| `config.py` | Nom du Wi-Fi, mot de passe, IP du PC — **privé, jamais sur GitHub** |
+| `config_exemple.py` | Modèle à copier en `config.py` |
 
-### Sur le PC (VS Code + Python)
+### Sur le PC (VS Code + Python + Docker)
 
 | Fichier | Rôle |
 |---|---|
-| `mosquitto.conf` | Réglages du broker MQTT Mosquitto |
-| **`recepteur.py`** | Reçoit les messages MQTT et les enregistre dans `mesures.csv` |
-| **`dashboard.py`** | Affiche l'état, les valeurs, les courbes et les dernières mesures |
-| `mesures.csv` | L'historique — **créé automatiquement** par `recepteur.py` |
+| `docker-compose.yml` | Lance Mosquitto, PostgreSQL, Grafana et pgAdmin |
+| `mosquitto.conf` | Réglages du broker MQTT (utilisé par le conteneur Mosquitto) |
+| `init.sql` | Crée la table `mesures` au premier démarrage de PostgreSQL |
+| **`recepteur.py`** | Reçoit les messages MQTT et les enregistre dans la table `mesures` |
+| `grafana/` | Source de données et tableau de bord Grafana, chargés automatiquement |
+| `.env` | Mots de passe de PostgreSQL et pgAdmin — **privé, jamais sur GitHub** |
 
 ---
 
@@ -77,8 +78,9 @@ Chaque mesure reçoit une note, puis la balise prend **la plus mauvaise des troi
   Le capteur d'air n'est **pas** un capteur de CO₂ : c'est un **indicateur** de pollution, sans unité.
 - Si le capteur de température ne répond pas, la balise affiche une erreur, éteint la LED et s'arrête.
 
-Le dashboard **ne recalcule pas** l'état : il affiche celui envoyé par la balise.
-La LED et le dashboard affichent donc toujours la même chose.
+Grafana **ne recalcule pas** l'état : il affiche celui envoyé par la balise.
+La LED et le tableau de bord affichent donc toujours la même chose.
+Les couleurs des valeurs dans Grafana utilisent les mêmes seuils que le tableau ci-dessus.
 
 ### Message envoyé par la balise (topic `balise/mesures`, toutes les 5 s)
 
@@ -87,6 +89,19 @@ La LED et le dashboard affichent donc toujours la même chose.
 ```
 
 La date et l'heure sont ajoutées par le PC (`recepteur.py`), car la carte ne connaît pas l'heure.
+Elles sont enregistrées en **heure locale de Paris** dans la colonne `date_heure`.
+
+### Table `mesures` (PostgreSQL)
+
+| Colonne | Type | Contenu |
+|---|---|---|
+| `id` | SERIAL | Numéro de la mesure |
+| `date_heure` | TIMESTAMP | Date et heure du PC (heure de Paris) |
+| `temperature` | REAL | °C |
+| `humidite` | REAL | % |
+| `air` | INTEGER | Valeur brute du capteur d'air |
+| `etat` | VARCHAR(10) | Good / Moderate / Poor |
+| `cause` | VARCHAR(50) | Mesures qui ne sont pas Good, ou « aucune » |
 
 ---
 
@@ -97,17 +112,28 @@ La date et l'heure sont ajoutées par le PC (`recepteur.py`), car la carte ne co
 1. Installer **Thonny**. *Outils → Options → Interpréteur* : **MicroPython (ESP32)** + port COM de la carte.
 2. *Installer ou mettre à jour MicroPython (esptool)* : famille **ESP32-C6**, variante **Espressif • ESP32-C6**.
 3. Vérifier la bibliothèque MQTT dans la console de Thonny : `from umqtt.simple import MQTTClient`.
+4. Copier `config_exemple.py` en `config.py`, le remplir, puis enregistrer **`config.py` et `balise.py`** sur la carte.
 
 ### PC
 
-1. Installer **Mosquitto** (mosquitto.org → Download → Windows 64 bits).
+1. Installer **Docker Desktop** et le lancer.
 2. Installer les bibliothèques Python :
    ```powershell
-   pip install paho-mqtt streamlit pandas
+   pip install paho-mqtt "psycopg[binary]" python-dotenv
    ```
-3. Autoriser le port MQTT dans le pare-feu (PowerShell **administrateur**) :
+3. Créer le fichier `.env` à côté de `docker-compose.yml` (choisir ses propres mots de passe) :
+   ```
+   POSTGRES_PASSWORD=un_mot_de_passe
+   PGADMIN_PASSWORD=un_autre_mot_de_passe
+   ```
+4. Autoriser le port MQTT dans le pare-feu (PowerShell **administrateur**) :
    ```powershell
    New-NetFirewallRule -DisplayName "Mosquitto MQTT" -Direction Inbound -Protocol TCP -LocalPort 1883 -Action Allow
+   ```
+5. Si **Mosquitto** ou **PostgreSQL** sont aussi installés sur Windows, ils prennent les ports 1883 et 5432
+   et empêchent Docker de démarrer. Les arrêter, et passer PostgreSQL en démarrage manuel (PowerShell **administrateur**) :
+   ```powershell
+   Set-Service postgresql-x64-18 -StartupType Manual
    ```
 
 ### `mosquitto.conf`
@@ -121,12 +147,15 @@ allow_anonymous true
 - `allow_anonymous true` : accepter les connexions sans identifiant.
   Pratique pour le projet, mais pas sécurisé (amélioration possible : mots de passe + TLS).
 
+Ce fichier est **indispensable** : `docker-compose.yml` le monte dans le conteneur Mosquitto.
+Sans lui, Mosquitto 2 n'accepte que les connexions venant de son propre conteneur.
+
 ### Réseau
 
 - Utiliser le **partage de connexion du téléphone** en **2,4 GHz**
   (iPhone : activer « Maximiser la compatibilité »). L'ESP32 ne voit pas le 5 GHz.
 - Le **PC et la carte doivent être sur le même réseau**.
-- Dans `balise.py`, remplir `NOM_WIFI`, `MOT_DE_PASSE` et `BROKER` (adresse IP du PC).
+- Dans `config.py`, remplir `NOM_WIFI`, `MOT_DE_PASSE` et `BROKER` (adresse IP du PC).
 
 ---
 
@@ -153,10 +182,10 @@ Get-NetIPAddress -AddressFamily IPv4 -InterfaceAlias "Wi-Fi" | Select-Object IPA
 | # | Où | Commande | Ce qu'on doit voir |
 |---|---|---|---|
 | 1 | Téléphone + PC | Partage activé, PC connecté dessus | — |
-| 2 | Terminal | `ipconfig` → corriger `BROKER` dans `balise.py` si l'IP a changé | IPv4 en `172.20.10.x` |
-| 3 | Terminal 1 | `& "C:\Program Files\mosquitto\mosquitto.exe" -c mosquitto.conf -v` | `Opening ipv4 listen socket on port 1883` |
-| 4 | Terminal 2 | `python recepteur.py` | `Connecté au broker` |
-| 5 | Terminal 3 | `streamlit run dashboard.py` | page sur http://localhost:8501 |
+| 2 | Terminal | `ipconfig` → corriger `BROKER` dans `config.py` si l'IP a changé | IPv4 en `172.20.10.x` |
+| 3 | Terminal 1 | `docker compose up -d` | 4 conteneurs `Started` ou `Running` |
+| 4 | Terminal 2 | `python recepteur.py` | `Connecté à PostgreSQL` puis `Connecté au broker` |
+| 5 | Navigateur | http://localhost:3000 → *Dashboards* → **Balise qualité de l'air** | le tableau de bord |
 | 6 | Thonny | **Stop**, puis ▶ sur `balise.py` | `Wi-Fi OK`, `Connecté au broker`, puis les mesures |
 
 **Pourquoi la balise en dernier ?**
@@ -165,8 +194,9 @@ Get-NetIPAddress -AddressFamily IPv4 -InterfaceAlias "Wi-Fi" | Select-Object IPA
 
 Attendre **2 à 3 minutes** que le capteur d'air chauffe avant de faire une démonstration.
 
-**Pour arrêter** : Stop dans Thonny, puis `Ctrl + C` dans chaque terminal.
-L'historique reste dans `mesures.csv` ; les nouvelles mesures s'ajoutent à la suite.
+**Pour arrêter** : Stop dans Thonny, `Ctrl + C` dans le terminal du récepteur, puis `docker compose stop`.
+L'historique reste dans PostgreSQL ; les nouvelles mesures s'ajoutent à la suite.
+⚠️ Ne pas utiliser `docker compose down -v` : le `-v` **efface la base de données**.
 
 **Balise autonome (sans PC)** : dans Thonny, *Fichier → Enregistrer sous → Appareil MicroPython*
 → `main.py`. Elle démarre seule dès qu'elle est alimentée. Ensuite, toujours cliquer sur **Stop**
@@ -174,7 +204,26 @@ avant de lancer un autre programme.
 
 ---
 
-## 7. Problèmes fréquents
+## 7. Voir les données
+
+### Grafana — le tableau de bord (http://localhost:3000)
+
+- Première connexion : `admin` / `admin`, puis choisir un nouveau mot de passe.
+- *Dashboards* → **Balise qualité de l'air** : état, cause, valeurs actuelles, courbes et dernières mesures.
+  Il se rafraîchit toutes les 5 s.
+- La source de données PostgreSQL et le tableau de bord sont créés automatiquement à partir du dossier `grafana/`.
+  Dans Grafana, l'hôte de la base est `postgres:5432` (le nom du service Docker), pas `localhost`.
+
+### pgAdmin — la base de données (http://localhost:5050)
+
+- Connexion : `admin@example.com` + le `PGADMIN_PASSWORD` du fichier `.env`.
+- *Register → Server* : hôte **`postgres`**, port `5432`, base `balise`, utilisateur **`balise`**,
+  mot de passe = `POSTGRES_PASSWORD` du fichier `.env`.
+- Les données : *Databases → balise → Schemas → public → Tables → mesures* → clic droit → *View/Edit Data*.
+
+---
+
+## 8. Problèmes fréquents
 
 | Symptôme | Cause probable / solution |
 |---|---|
@@ -182,21 +231,36 @@ avant de lancer un autre programme.
 | `ETIMEDOUT` / « le capteur de température ne répond pas » | Fil mal enfoncé (souvent le GND) → appuyer sur les fils, relancer |
 | La carte s'éteint (LED rouge éteinte) | Court-circuit 3V3 / GND → débrancher et vérifier le câblage |
 | `Wi-Fi OK` n'apparaît jamais | Partage éteint, ou pas en 2,4 GHz, ou mauvais nom / mot de passe |
-| Erreur à `client.connect()` (`ECONNABORTED`, `EHOSTUNREACH`) | Mauvaise IP dans `BROKER`, broker arrêté, PC pas sur le même réseau, ou pare-feu |
+| `ImportError: no module named 'config'` sur la carte | `config.py` n'a pas été copié sur la carte |
+| Erreur à `client.connect()` (`ECONNABORTED`, `EHOSTUNREACH`) | Mauvaise IP dans `BROKER`, conteneurs arrêtés, PC pas sur le même réseau, ou pare-feu |
 | `ECONNRESET` pendant l'envoi | Message envoyé sans `.encode()` (problème des accents) |
-| Rien n'arrive dans le terminal du récepteur | `balise.py` non lancé, ou Mosquitto fermé |
-| Dashboard figé | `recepteur.py` arrêté |
-| Erreur d'écriture dans `mesures.csv` | Le fichier est ouvert dans Excel → le fermer |
+| `docker compose up` : `port is already allocated` | Mosquitto ou PostgreSQL Windows tourne encore → l'arrêter (voir installation, étape 5) |
+| `password authentication failed for user "balise"` | Le mot de passe de `.env` a changé après la création de la base (il n'est lu qu'au premier démarrage) |
+| Rien n'arrive dans le terminal du récepteur | `balise.py` non lancé, ou conteneurs arrêtés |
+| Tableau de bord Grafana figé | `recepteur.py` arrêté |
 
 ---
 
-## 8. Pour la suite
+## 9. Évolution du projet
 
-- **Niveau normal** : alertes (notification quand l'état passe à Poor), batterie + BMS
+- **Version 1** : Mosquitto installé sur Windows, `recepteur.py` écrivait les mesures dans un fichier
+  `mesures.csv`, et un tableau de bord **Streamlit** (`dashboard.py`) lisait ce fichier.
+  Le code de cette version reste dans l'historique Git (commit `9d1ad54`).
+- **Version 2** : tout tourne dans **Docker** (Mosquitto, PostgreSQL, Grafana, pgAdmin).
+  `recepteur.py` enregistre dans **PostgreSQL**, et **Grafana** remplace Streamlit.
+  Les mots de passe sont sortis du code (`config.py` et `.env`, ignorés par Git).
+
+Les mesures de la version 1 (fichiers CSV) sont gardées en local pour le rapport, mais ne sont pas sur GitHub.
+
+---
+
+## 10. Pour la suite
+
+- **Niveau normal** : alertes (notification quand l'état passe à Poor, possibles avec Grafana), batterie + BMS
   (ne jamais brancher une batterie Li-ion/LiPo directement sur la carte sans circuit adapté).
-- **Niveau avancé** : prédiction de la qualité de l'air à partir de l'historique `mesures.csv`,
-  Grafana, module RTC, ventilation automatique.
+- **Niveau avancé** : prédiction de la qualité de l'air à partir de l'historique de la table `mesures`,
+  module RTC, ventilation automatique.
 - **À grande échelle** : relier Mosquitto à Apache Kafka pour stocker et traiter les flux de nombreuses balises.
 
-> Ne pas publier le vrai nom du Wi-Fi ni le mot de passe : les remplacer par
-> `"NOM_DU_WIFI"` et `"MOT_DE_PASSE"` avant de partager le code.
+> Ne jamais publier le vrai nom du Wi-Fi ni les mots de passe : ils restent dans `config.py` et `.env`,
+> qui sont ignorés par Git.
