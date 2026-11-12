@@ -22,7 +22,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT etat FROM mesures ORDER BY id DESC LIMIT 1"
+          "rawSql": "SELECT etat FROM mesures ORDER BY date_heure DESC LIMIT 1"
         }
       ],
       "fieldConfig": {
@@ -64,7 +64,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT cause FROM mesures ORDER BY id DESC LIMIT 1"
+          "rawSql": "SELECT cause FROM mesures ORDER BY date_heure DESC LIMIT 1"
         }
       ],
       "fieldConfig": {
@@ -98,7 +98,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT temperature FROM mesures ORDER BY id DESC LIMIT 1"
+          "rawSql": "SELECT temperature FROM mesures ORDER BY date_heure DESC LIMIT 1"
         }
       ],
       "fieldConfig": {
@@ -140,7 +140,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT humidite FROM mesures ORDER BY id DESC LIMIT 1"
+          "rawSql": "SELECT humidite FROM mesures ORDER BY date_heure DESC LIMIT 1"
         }
       ],
       "fieldConfig": {
@@ -182,7 +182,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT air FROM mesures ORDER BY id DESC LIMIT 1"
+          "rawSql": "SELECT air FROM mesures ORDER BY date_heure DESC LIMIT 1"
         }
       ],
       "fieldConfig": {
@@ -222,7 +222,7 @@
           "editorMode": "code",
           "format": "time_series",
           "rawQuery": true,
-          "rawSql": "SELECT date_heure AT TIME ZONE 'Europe/Paris' AS \"time\", temperature AS \"Température\" FROM mesures WHERE $__timeFilter(date_heure AT TIME ZONE 'Europe/Paris') ORDER BY 1"
+          "rawSql": "SELECT date_heure AS \"time\", temperature AS \"Température\" FROM mesures WHERE $__timeFilter(date_heure) ORDER BY 1"
         }
       ],
       "fieldConfig": {
@@ -248,7 +248,7 @@
           "editorMode": "code",
           "format": "time_series",
           "rawQuery": true,
-          "rawSql": "SELECT date_heure AT TIME ZONE 'Europe/Paris' AS \"time\", humidite AS \"Humidité\" FROM mesures WHERE $__timeFilter(date_heure AT TIME ZONE 'Europe/Paris') ORDER BY 1"
+          "rawSql": "SELECT date_heure AS \"time\", humidite AS \"Humidité\" FROM mesures WHERE $__timeFilter(date_heure) ORDER BY 1"
         }
       ],
       "fieldConfig": {
@@ -274,7 +274,7 @@
           "editorMode": "code",
           "format": "time_series",
           "rawQuery": true,
-          "rawSql": "SELECT date_heure AT TIME ZONE 'Europe/Paris' AS \"time\", air AS \"Air\" FROM mesures WHERE $__timeFilter(date_heure AT TIME ZONE 'Europe/Paris') ORDER BY 1"
+          "rawSql": "SELECT date_heure AS \"time\", air AS \"Air\" FROM mesures WHERE $__timeFilter(date_heure) ORDER BY 1"
         }
       ],
       "fieldConfig": {
@@ -300,7 +300,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT date_heure AT TIME ZONE 'Europe/Paris' AS \"Date\", temperature AS \"Température (°C)\", humidite AS \"Humidité (%)\", air AS \"Air\", etat AS \"État\", cause AS \"Cause\" FROM mesures ORDER BY id DESC LIMIT 20"
+          "rawSql": "SELECT date_heure AS \"Date\", temperature AS \"Température (°C)\", humidite AS \"Humidité (%)\", air AS \"Air\", etat AS \"État\", cause AS \"Cause\" FROM mesures ORDER BY date_heure DESC LIMIT 20"
         }
       ],
       "fieldConfig": {

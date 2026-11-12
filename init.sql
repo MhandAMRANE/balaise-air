@@ -1,11 +1,15 @@
+CREATE EXTENSION IF NOT EXISTS timescaledb;
+
 CREATE TABLE IF NOT EXISTS mesures (
-    id          SERIAL PRIMARY KEY,
-    date_heure  TIMESTAMP NOT NULL DEFAULT NOW(),
+    id          SERIAL,
+    date_heure  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     temperature REAL,
     humidite    REAL,
     air         INTEGER,
     etat        VARCHAR(10),
-    cause       VARCHAR(50)
+    cause       VARCHAR(50),
+    PRIMARY KEY (id, date_heure)   -- TimescaleDB impose la colonne de temps dans la clé primaire
 );
 
-CREATE INDEX IF NOT EXISTS idx_mesures_date ON mesures (date_heure);
+-- create_hypertable crée aussi automatiquement l'index sur date_heure.
+SELECT create_hypertable('mesures', by_range('date_heure', INTERVAL '1 day'), if_not_exists => TRUE);
