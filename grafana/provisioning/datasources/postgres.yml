@@ -1,6 +1,5 @@
 # Source de données PostgreSQL créée automatiquement au démarrage de Grafana.
 # L'hôte est "postgres" (le nom du service Docker), pas localhost.
-# Le mot de passe vient de .env, transmis par docker-compose.yml.
 apiVersion: 1
 
 datasources:

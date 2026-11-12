@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 # --- Connexion à PostgreSQL ---
 load_dotenv()        
 base = psycopg.connect(
-    host="127.0.0.1",       # pas "localhost" : sous Windows il essaie d'abord IPv6 (::1) et attend longtemps
+    host="127.0.0.1",     
     port=5432,
     dbname="balise",
     user="balise",

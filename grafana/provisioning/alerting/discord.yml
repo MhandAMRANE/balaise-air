@@ -1,8 +1,8 @@
 # Alerte Discord + e-mail : un message quand la qualité de l'air devient Poor.
-# L'URL du webhook et les adresses e-mail viennent de .env, jamais du code.
+# Les secrets (webhook Discord, adresse e-mail) viennent du fichier .env.
 apiVersion: 1
 
-# 0. Le texte du message, écrit une seule fois et utilisé par Discord et par l'e-mail.
+# 0. Le texte du message, écrit une seule fois pour Discord et pour l'e-mail.
 #    Une ligne par cause envoyée par la balise (air, temperature, humidite).
 templates:
   - orgId: 1
@@ -28,31 +28,29 @@ contactPoints:
     receivers:
       - uid: discord-balise
         type: discord
-        disableResolveMessage: true   # pas de message de retour à la normale
+        disableResolveMessage: true          # rien quand l'air redevient bon
         settings:
           url: ${DISCORD_WEBHOOK_URL}
-          use_discord_username: false
           title: "⚠️ Qualité de l'air : mauvaise"
           message: '{{ template "balise.message" . }}'
       - uid: email-balise
         type: email
-        disableResolveMessage: true   # pas d'e-mail de retour à la normale
+        disableResolveMessage: true          # rien quand l'air redevient bon
         settings:
           addresses: ${ALERT_EMAIL_TO}
-          singleEmail: true
           subject: "⚠️ Qualité de l'air : mauvaise"
           message: '{{ template "balise.message" . }}'
 
-# 2. Toutes les alertes vont sur Discord et par e-mail ; rappel au bout de 24 h si l'état reste Poor
+# 2. Le rythme des envois
 policies:
   - orgId: 1
     receiver: Discord balise
     group_by: ['alertname']
-    group_wait: 10s
-    group_interval: 1m
-    repeat_interval: 24h
+    group_wait: 10s           # attendre 10 s avant le premier message
+    group_interval: 1m        # au moins 1 min avant un nouveau message (si la cause change)
+    repeat_interval: 24h      # rappel au plus une fois par jour si l'air reste Poor
 
-# 3. La règle : la dernière mesure (moins de 2 minutes) est-elle Poor ?
+# 3. La règle : vérifiée toutes les 20 s, alerte si la dernière mesure est Poor
 groups:
   - orgId: 1
     name: balise
@@ -63,14 +61,14 @@ groups:
         title: Qualité de l'air mauvaise
         condition: C
         data:
+          # A : la dernière mesure des 2 dernières minutes (1 si Poor, 0 sinon)
           - refId: A
             relativeTimeRange:
-              from: 600
+              from: 120
               to: 0
             datasourceUid: balise-pg
             model:
               refId: A
-              editorMode: code
               format: table
               rawQuery: true
               rawSql: >-
@@ -78,6 +76,7 @@ groups:
                 FROM mesures
                 WHERE date_heure AT TIME ZONE 'Europe/Paris' > now() - interval '2 minutes'
                 ORDER BY id DESC LIMIT 1
+          # C : alerte si poor > 0.5, c'est-à-dire si poor vaut 1
           - refId: C
             datasourceUid: __expr__
             model:
@@ -88,10 +87,6 @@ groups:
                 - evaluator:
                     type: gt
                     params: [0.5]
-        noDataState: OK          # pas de mesure récente : pas d'alerte
-        execErrState: KeepLast   # base injoignable : on garde l'état précédent
-        for: 0s
-        annotations:
-          summary: "Qualité de l'air mauvaise (cause : {{ index .Labels \"cause\" }})"
-        labels: {}
-        isPaused: false
+        noDataState: OK           # pas de mesure récente (balise arrêtée) : pas d'alerte
+        execErrState: KeepLast    # base injoignable : on garde l'état précédent
+        for: 0s                   # obligatoire : alerte dès la première mesure Poor
