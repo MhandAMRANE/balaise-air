@@ -31,8 +31,8 @@ def on_message(client, userdata, msg):
         print("Message ignoré (pas du JSON) :", msg.payload)
         return
 
-    # 2. Prendre la date et l'heure du PC
-    maintenant = datetime.now()
+    # 2. Prendre la date et l'heure du PC, avec son fuseau horaire (colonne TIMESTAMPTZ)
+    maintenant = datetime.now().astimezone()
 
     # 3. Ajouter une ligne dans la table PostgreSQL
     base.execute(

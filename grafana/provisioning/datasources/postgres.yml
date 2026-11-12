@@ -14,6 +14,6 @@ datasources:
       database: balise
       sslmode: disable
       postgresVersion: 1600
-      timescaledb: false
+      timescaledb: true
     secureJsonData:
       password: ${POSTGRES_PASSWORD}

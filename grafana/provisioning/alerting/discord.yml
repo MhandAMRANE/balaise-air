@@ -74,8 +74,8 @@ groups:
               rawSql: >-
                 SELECT CASE WHEN etat = 'Poor' THEN 1 ELSE 0 END AS poor, cause
                 FROM mesures
-                WHERE date_heure AT TIME ZONE 'Europe/Paris' > now() - interval '2 minutes'
-                ORDER BY id DESC LIMIT 1
+                WHERE date_heure > now() - interval '2 minutes'
+                ORDER BY date_heure DESC LIMIT 1
           # C : alerte si poor > 0.5, c'est-à-dire si poor vaut 1
           - refId: C
             datasourceUid: __expr__

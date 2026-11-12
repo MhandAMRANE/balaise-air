@@ -7,7 +7,7 @@ Elle affiche l'état de la pièce sur sa LED (🟢 Good / 🟡 Moderate / 🔴 P
 mesures en **MQTT** vers un PC, qui les **enregistre dans PostgreSQL** et les affiche dans **Grafana**.
 
 ```
-Capteurs → ESP32-C6 → Wi-Fi / MQTT → Mosquitto (Docker) → recepteur.py → PostgreSQL (Docker) → Grafana (Docker)
+Capteurs → ESP32-C6 → Wi-Fi / MQTT → Mosquitto (Docker) → recepteur.py → PostgreSQL + TimescaleDB (Docker) → Grafana (Docker)
 ```
 
 **Niveau minimum atteint** : capteurs + ESP32 + LED + Wi-Fi + MQTT + dashboard.
@@ -29,9 +29,9 @@ Capteurs → ESP32-C6 → Wi-Fi / MQTT → Mosquitto (Docker) → recepteur.py �
 
 | Fichier | Rôle |
 |---|---|
-| `docker-compose.yml` | Lance Mosquitto, PostgreSQL, Grafana et pgAdmin |
+| `docker-compose.yml` | Lance Mosquitto, PostgreSQL + TimescaleDB, Grafana et pgAdmin |
 | `mosquitto.conf` | Réglages du broker MQTT (utilisé par le conteneur Mosquitto) |
-| `init.sql` | Crée la table `mesures` au premier démarrage de PostgreSQL |
+| `init.sql` | Au premier démarrage : active TimescaleDB, crée la table `mesures` et la transforme en hypertable découpée par jour |
 | **`recepteur.py`** | Reçoit les messages MQTT et les enregistre dans la table `mesures` |
 | `grafana/` | Source de données et tableau de bord Grafana, chargés automatiquement |
 | `.env` | Mots de passe de PostgreSQL et pgAdmin — **privé, jamais sur GitHub** |
@@ -89,19 +89,83 @@ Les couleurs des valeurs dans Grafana utilisent les mêmes seuils que le tableau
 ```
 
 La date et l'heure sont ajoutées par le PC (`recepteur.py`), car la carte ne connaît pas l'heure.
-Elles sont enregistrées en **heure locale de Paris** dans la colonne `date_heure`.
+Elles sont enregistrées comme un **instant exact, avec le fuseau horaire** (`TIMESTAMPTZ`) :
+PostgreSQL sait que 14h à Paris correspond à 13h UTC (12h UTC en été). Grafana les affiche dans l'heure du navigateur.
 
-### Table `mesures` (PostgreSQL)
+### Table `mesures` (PostgreSQL + TimescaleDB)
 
 | Colonne | Type | Contenu |
 |---|---|---|
 | `id` | SERIAL | Numéro de la mesure |
-| `date_heure` | TIMESTAMP | Date et heure du PC (heure de Paris) |
+| `date_heure` | TIMESTAMPTZ | Date et heure du PC, avec le fuseau horaire |
 | `temperature` | REAL | °C |
 | `humidite` | REAL | % |
 | `air` | INTEGER | Valeur brute du capteur d'air |
 | `etat` | VARCHAR(10) | Good / Moderate / Poor |
 | `cause` | VARCHAR(50) | Mesures qui ne sont pas Good, ou « aucune » |
+
+Clé primaire : `(id, date_heure)` — TimescaleDB impose que la colonne de temps fasse partie de la clé.
+
+### TimescaleDB : une hypertable découpée par jour
+
+`mesures` est une **hypertable** : TimescaleDB range automatiquement les mesures dans un **morceau (chunk) par jour**
+(`create_hypertable('mesures', by_range('date_heure', INTERVAL '1 day'))` dans `init.sql`).
+Une requête sur une plage horaire ne lit **que le morceau du jour concerné**, même quand l'historique grossit
+(une mesure toutes les 5 s ≈ 17 000 lignes par jour). Les jours sont découpés à minuit UTC (1h du matin à Paris en hiver).
+
+Pour lancer ces requêtes : pgAdmin (*Tools → Query Tool*), ou dans un terminal :
+`docker compose exec postgres psql -U balise -d balise`
+
+**Lister les morceaux :**
+```sql
+SELECT show_chunks('mesures');
+
+-- avec les dates de début et de fin de chaque morceau
+SELECT chunk_name, range_start, range_end
+FROM timescaledb_information.chunks
+WHERE hypertable_name = 'mesures'
+ORDER BY range_start;
+```
+
+**Une plage horaire** (de 14h à 15h, heure de Paris, le 12 novembre 2026) :
+```sql
+SELECT date_heure AT TIME ZONE 'Europe/Paris' AS heure_paris, temperature, humidite, air, etat, cause
+FROM mesures
+WHERE date_heure >= '2026-11-12 14:00 Europe/Paris'
+  AND date_heure <  '2026-11-12 15:00 Europe/Paris'
+ORDER BY date_heure;
+```
+Le filtre porte directement sur la colonne `date_heure` (sans calcul dessus) : c'est ce qui permet à TimescaleDB
+d'écarter les autres jours. On le vérifie en ajoutant `EXPLAIN` devant la requête : le plan ne contient qu'un seul
+morceau (`_hyper_1_..._chunk`). La conversion `AT TIME ZONE` ne sert qu'à l'**affichage**, dans le `SELECT`.
+
+**Moyennes par tranches de 5 minutes** (`time_bucket`), sur la dernière heure :
+```sql
+SELECT time_bucket('5 minutes', date_heure) AT TIME ZONE 'Europe/Paris' AS tranche,
+       round(avg(temperature)::numeric, 1) AS temperature_moy,
+       round(avg(humidite)::numeric, 1)    AS humidite_moy,
+       round(avg(air)::numeric)            AS air_moy,
+       count(*)                            AS nb_mesures
+FROM mesures
+WHERE date_heure > now() - INTERVAL '1 hour'
+GROUP BY 1
+ORDER BY 1;
+```
+
+**Résumé par jour** (jours de Paris) :
+```sql
+SELECT (time_bucket('1 day', date_heure, 'Europe/Paris') AT TIME ZONE 'Europe/Paris')::date AS jour,
+       count(*)                                   AS nb_mesures,
+       round(avg(temperature)::numeric, 1)        AS temperature_moy,
+       min(temperature)                           AS temperature_min,
+       max(temperature)                           AS temperature_max,
+       round(avg(humidite)::numeric, 1)           AS humidite_moy,
+       max(air)                                   AS air_max,
+       count(*) FILTER (WHERE etat = 'Poor')      AS nb_poor
+FROM mesures
+GROUP BY 1
+ORDER BY 1;
+```
 
 ---
 
@@ -274,6 +338,9 @@ avant de lancer un autre programme.
   **Alerte Discord et e-mail** envoyée par Grafana quand l'état passe à Poor.
   Sécurité : PostgreSQL, Grafana et pgAdmin ne sont accessibles que depuis le PC (`127.0.0.1`) ;
   seul Mosquitto (1883) est ouvert au réseau, pour la carte.
+- **TimescaleDB** (demande du professeur) : la table `mesures` devient une hypertable découpée par jour,
+  et `date_heure` passe en `TIMESTAMPTZ` (instant exact avec fuseau). Les requêtes Grafana et l'alerte
+  filtrent directement sur `date_heure`, ce qui permet de ne lire que les jours utiles.
 
 Les mesures de la version 1 (fichiers CSV) sont gardées en local pour le rapport, mais ne sont pas sur GitHub.
 
